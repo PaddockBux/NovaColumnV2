@@ -1,0 +1,7 @@
+mcstatus 
+datetime
+configparser
+argparse
+logging
+mariadb
+mcuuid
