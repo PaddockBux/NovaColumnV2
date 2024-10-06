@@ -1,7 +1,6 @@
 # NovaColumnV2
 
 Welcome to NovaColumnV2!
-This is an updated version of the original (and quite terrible) [NovaColumn](https://github.com/PaddockBux/NovaColumn).
 
 ## What's this?
 
