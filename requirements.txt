@@ -1,7 +1,8 @@
-mcstatus 
-datetime
-configparser
-argparse
-logging
-mariadb
-mcuuid
+configparser==7.0.0
+datetime==5.5
+mariadb==1.1.10
+mcstatus==11.1.1
+mcuuid==1.1.0
+requests==2.32.3
+argparse==1.4.0
+logging==0.4.9.6

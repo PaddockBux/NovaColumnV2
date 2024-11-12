@@ -3,6 +3,7 @@ from datetime import datetime
 import concurrent.futures
 import configparser
 import threading
+import requests
 import argparse
 import logging
 import mariadb
@@ -45,6 +46,7 @@ def initialize_arguments():
     parser.add_argument('-m', '--timeout', type=float, default="0.3", help="The timeout speed for the servers, read the README for more info. (0.3 default)")
     parser.add_argument('-e', '--external', action='store_true', help="Used for when the database is not on the same machine. (only applies for --update)")
     parser.add_argument('-c', '--verify', action='store_true', help="Verify all playernames in the database. (does not require a file)")
+    parser.add_argument('-a', '--altapi', action='store_true', default=True, help="Verify using the official Mojang API instead of Mowojang. (only applies for --verify)")
     args = parser.parse_args()
     return args
 
@@ -368,21 +370,14 @@ def main_update(max_workers, external):
         db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
         db_thread.start()
 
-    processed = set()
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         with conn.cursor() as cursor:
-            # cursor.execute("SELECT COUNT(*) FROM main")
-            # db_length = cursor.fetchone()[0]
-
             cursor.execute('SELECT i.address, m.port FROM main m JOIN ips i ON m.ip_fk = i.uid GROUP BY i.address, m.port')
             sreq = cursor.fetchall()
             for index in range(len(sreq)):
                 ip = sreq[index][0]
                 port = sreq[index][1]
-                if (ip, port) not in processed:
-                    executor.submit(ping_worker, ip, port, args.timeout, ping_queue)
-                    processed.add((ip, port))
+                executor.submit(ping_worker, ip, port, args.timeout, ping_queue)
 
     if external:
         db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
@@ -422,29 +417,37 @@ def verify_usernames():
     playernames = cursor.fetchall()
     validity = []
     for index in range(len(playernames)):
-        check = mcuuid.MCUUID(uuid=str(playernames[index][2]).replace("-", ""))
+        if not args.altapi:
+            logger.debug("Requesting uuid... (MCUUID)")
+            check = mcuuid.MCUUID(uuid=str(playernames[index][2]).replace("-", ""))
+        else:
+            logger.debug("Requesting uuid... (Mowojang)")
+            check = requests.get(f'https://mowojang.matdoes.dev/{playernames[index][2]}')
         try:
             logger.debug(f"Checking {playernames[index][2]} for validity")
-            usr = check.name
+            if args.altapi:
+                usr = check.json()['name']
+            else:
+                usr = check.name
             logger.info(f"Valid UUID - [{usr}]")
             validity.append('true')
         except Exception:
             logger.info("Invalid UUID")
             validity.append('false')
+    logger.info('Verification complete, saving to DB')
     for index in range(len(validity)):
-        logger.info(f"Updating database playernames - UID {playernames[index][0]} with {validity[index]}")
+        logger.debug(f"Setting UID {playernames[index][0]} ({playernames[index][1]}) to {validity[index]}")
         cursor.execute("UPDATE playernames SET valid = ? WHERE uid = ?", (validity[index], playernames[index][0]))
     
     conn.commit()
     conn.close()
     logger.info("Username verification complete!")
 
-
 if __name__ == "__main__":
     args = initialize_arguments()
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)  # Log everything at DEBUG level for file logging
+    logger.setLevel(logging.DEBUG)
 
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
@@ -454,14 +457,14 @@ if __name__ == "__main__":
 
     log_filename = datetime.now().strftime('novacolumn_%Y-%m-%d_%H-%M-%S.log')
     file_handler = logging.FileHandler(f'./logs/{log_filename}', 'w', 'utf8')
-    file_handler.setLevel(logging.DEBUG)  # Log all levels to file
+    file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(file_formatter)
 
     console_handler = logging.StreamHandler()
     if args.verbose:
-        console_handler.setLevel(logging.DEBUG)  # Show DEBUG in verbose mode
+        console_handler.setLevel(logging.DEBUG) 
     else:
-        console_handler.setLevel(logging.INFO)  # Otherwise, show only INFO and higher
+        console_handler.setLevel(logging.INFO)
     console_formatter = logging.Formatter('%(levelname)s - %(message)s')
     console_handler.setFormatter(console_formatter)
 
