@@ -123,7 +123,7 @@ def db_handler(ping_queue, conn, update):
                 cursor = conn.cursor()
                 ip = result[1]
                 port = result[2]
-                update_db(cursor, ip, port, False)
+                update_online(cursor, ip, port)
             else:
                 cursor = conn.cursor()
                 data_out = result[1]
@@ -134,10 +134,8 @@ def ping_worker(ip, port, timeout, ping_queue):
     result = ping_server(ip, port, timeout)
     ping_queue.put(result)
 
-def update_db(cursor, ip, port, status):
-    cursor.execute("SELECT uid FROM ips WHERE address = ?", (ip,))
-    ip_uid = cursor.fetchone()[0]
-    cursor.execute("SELECT uid FROM main WHERE ip_fk = ? AND port = ?", (ip_uid, port))
+def update_online(cursor, ip, port):
+    cursor.execute("SELECT MAX(uid) FROM main WHERE ip_fk = (SELECT uid FROM ips WHERE address = ?) AND port = ?", (ip, port))
     main_uid = cursor.fetchone()[0]
     logger.debug('Saving to online...')
     cursor.execute('''INSERT INTO online (
@@ -145,11 +143,10 @@ def update_db(cursor, ip, port, status):
         ) 
         VALUES (?, ?, ?)''', (
             main_uid,
-            status,
+            False,
             time.time()
         )
     )
-    # cursor.execute("SELECT online FROM online WHERE main_fk = ?", (main_uid,))
 
 def add_to_db(cursor, data_out):
     ip = data_out['ip']
@@ -375,17 +372,14 @@ def main_update(max_workers, external):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM main")
-            db_length = cursor.fetchone()[0]
-            for index in range(db_length):
-                cursor.execute("SELECT ip_fk, port FROM main WHERE uid = ?", (index + 1,))
-                request = cursor.fetchone()
-                ip_fk = request[0]
-                port = request[1]
-                
-                cursor.execute("SELECT address FROM ips WHERE uid = ?", (ip_fk,))
-                ip = cursor.fetchone()[0]
-                
+            # cursor.execute("SELECT COUNT(*) FROM main")
+            # db_length = cursor.fetchone()[0]
+
+            cursor.execute('SELECT i.address, m.port FROM main m JOIN ips i ON m.ip_fk = i.uid GROUP BY i.address, m.port')
+            sreq = cursor.fetchall()
+            for index in range(len(sreq)):
+                ip = sreq[index][0]
+                port = sreq[index][1]
                 if (ip, port) not in processed:
                     executor.submit(ping_worker, ip, port, args.timeout, ping_queue)
                     processed.add((ip, port))
