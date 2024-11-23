@@ -39,14 +39,19 @@ def initialize_arguments():
     formatter_class=argparse.RawDescriptionHelpFormatter
 )
     group = parser.add_mutually_exclusive_group(required=False)
-    group.add_argument('file', nargs='?', type=str, help="The path to the .json file to be parsed.")
-    group.add_argument('-u', '--update', action='store_true', help="Ping/Update the current servers in the database. (does not require a file)")
-    parser.add_argument('-v', '--verbose', action='store_true', help="Enable verbose mode to print detailed logs.")
-    parser.add_argument('-t', '--threads', type=int, default="4", help="The amount of threads to process the file with. (4 default)")
-    parser.add_argument('-m', '--timeout', type=float, default="0.3", help="The timeout speed for the servers, read the README for more info. (0.3 default)")
-    parser.add_argument('-e', '--external', action='store_true', help="Used for when the database is not on the same machine. (only applies for --update)")
-    parser.add_argument('-c', '--verify', action='store_true', help="Verify all playernames in the database. (does not require a file)")
-    parser.add_argument('-a', '--altapi', action='store_true', default=True, help="Verify using the official Mojang API instead of Mowojang. (only applies for --verify)")
+    group.add_argument('file', nargs='?', type=str, help="the path to the .json file to be parsed.")
+    group.add_argument('-u', '--update', action='store_true', help="ping/Update the current servers in the database. (does not require a file)")
+    parser.add_argument('-v', '--verbose', action='store_true', help="enable verbose mode to print detailed logs.")
+    parser.add_argument('-t', '--threads', type=int, default="4", help="the amount of threads to process the file with. (4 default)")
+    parser.add_argument('-m', '--timeout', type=float, default="0.3", help="the timeout speed for the servers, read the README for more info. (0.3 default)")
+    parser.add_argument('-e', '--external', action='store_true', help="used for when the database is not on the same machine. (only applies for --update)")
+    parser.add_argument('-c', '--verify', action='store_true', help="verify all playernames in the database. (does not require a file)")
+    parser.add_argument('-a', '--altapi', action='store_true', default=True, help="verify using the official Mojang API instead of Mowojang. (only applies for --verify)")
+    parser.add_argument('--dbusername', type=str, help="pass database username via argument.")
+    parser.add_argument('--dbpassword', type=str, help="pass database password via argument.")
+    parser.add_argument('--dbhost', type=str, default="localhost", help="pass database host via argument. (default localhost)")
+    parser.add_argument('--dbport', type=int, default=3306, help="pass database port via argument. (default 3306)")
+    parser.add_argument('--dbname', type=str, default="novacolumn", help="pass database name via argument. (default 'novacolumn')")
     args = parser.parse_args()
     return args
 
@@ -335,17 +340,26 @@ def init_db(conn):
         conn.commit()
         logger.info('Tables created and initialized successfully.')
 
-def main(json_data, max_workers):
+def main(json_data, args):
     ping_queue = queue.Queue()
 
-    config_data = read_config()
-    conn = connect_to_db(config_data)
+    if not args.dbusername:
+        config_data = read_config()
+        conn = connect_to_db(config_data)
+    else:
+        config_data = {}
+        config_data['db_username'] = args.dbusername
+        config_data['db_pass'] = args.dbpassword
+        config_data['db_host'] = args.dbhost
+        config_data['db_port'] = args.dbport
+        config_data['db_name'] = args.dbname
+        conn = connect_to_db(config_data)
     init_db(conn)
 
     db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, False))
     db_thread.start()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
         for index in range(len(json_data)):
             # Format: {scan_data[INDEX]['ip']}:{scan_data[INDEX]['ports'][0]['port']}
             executor.submit(ping_worker, json_data[index]['ip'], json_data[index]['ports'][0]['port'], args.timeout, ping_queue)
@@ -360,17 +374,26 @@ def main(json_data, max_workers):
     conn.close()
     logger.info("Parse complete!")
 
-def main_update(max_workers, external):
+def main_update(args):
     ping_queue = queue.Queue()
 
-    conn = connect_to_db(read_config())
+    if not args.dbusername:
+        conn = connect_to_db(read_config())
+    else:
+        config_data = {}
+        config_data['db_username'] = args.dbusername
+        config_data['db_pass'] = args.dbpassword
+        config_data['db_host'] = args.dbhost
+        config_data['db_port'] = args.dbport
+        config_data['db_name'] = args.dbname
+        conn = connect_to_db(config_data)
     init_db(conn)
 
-    if not external:
+    if not args.external:
         db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
         db_thread.start()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
         with conn.cursor() as cursor:
             cursor.execute('SELECT i.address, m.port FROM main m JOIN ips i ON m.ip_fk = i.uid GROUP BY i.address, m.port')
             sreq = cursor.fetchall()
@@ -379,7 +402,7 @@ def main_update(max_workers, external):
                 port = sreq[index][1]
                 executor.submit(ping_worker, ip, port, args.timeout, ping_queue)
 
-    if external:
+    if args.external:
         db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
         db_thread.start()
 
@@ -408,8 +431,17 @@ def create_config():
         file.write("; If you plan to use this in a public database, make sure not to use root as the default user.\n")
         config.write(file)
 
-def verify_usernames():
-    conn = connect_to_db(read_config())
+def verify_usernames(args):
+    if not args.dbusername:
+        conn = connect_to_db(read_config())
+    else:
+        config_data = {}
+        config_data['db_username'] = args.dbusername
+        config_data['db_pass'] = args.dbpassword
+        config_data['db_host'] = args.dbhost
+        config_data['db_port'] = args.dbport
+        config_data['db_name'] = args.dbname
+        conn = connect_to_db(config_data)
     init_db(conn)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM playernames WHERE valid = 'waiting'")
@@ -471,7 +503,10 @@ if __name__ == "__main__":
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     
-    if not os.path.exists('novacolumn.conf'):
+    if args.dbusername:
+        logger.debug("Database credentials found in arguments.")
+        pass
+    elif not os.path.exists('novacolumn.conf'):
         logger.critical(".conf file not found. Creating default conf...")
         create_config()
         logger.critical("Default .conf file created, please fill it out!")
@@ -481,10 +516,10 @@ if __name__ == "__main__":
 
     if args.update:
         logger.info('Updating entire database!')
-        main_update(args.threads, args.external)
+        main_update(args)
     elif args.verify:
         logger.info('Validating usernames:')
-        verify_usernames()
+        verify_usernames(args)
     else:
         if not args.file:
             logger.critical('There was no .json file provided!')
@@ -500,4 +535,4 @@ if __name__ == "__main__":
         except FileNotFoundError:
             logger.critical('The .json file provided does not exist.')
             exit(1)
-        main(scan_data, args.threads)
+        main(scan_data, args)
