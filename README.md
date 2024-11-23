@@ -29,15 +29,15 @@ Clone the repo using `git clone https://github.com/PaddockBux/NovaColumnV2` and 
 
 ## Usage
 
-NCV2 requires a first run in order to create the database configuration file. Just simply run the script and it will drop a file named `novacolumn.conf` in the same directory. Included is the entries for credentials used to interface with the MariaDB server.
+NCV2 drops a config file on first run (unless you manually pass database credentials using the arguments). Just simply run the script and it will drop a file named `novacolumn.conf` in the same directory. Included is the entries for credentials used to interface with the MariaDB server.
 
 After creating and filling out the configuration file, you're ready to use NCV2.\
-To use NCV2, run masscan with a json output (`-oJ <filename>.json`) and then run NCV2 with the output file: `python ncv2.py <filename>.json`.
+To use NCV2, run masscan with a json output (`-oJ <filename>.json`). When masscan is completed run NCV2 with the output file: `python ncv2.py <filename>.json`.
 
 Information about arguments are shown when the `-h` argument is added.
 
 ```Text
-usage: ncv2.py [-h] [-u] [-v] [-t THREADS] [-m TIMEOUT] [-e] [-c] [-a] [file]
+usage: ncv2.py [-h] [-u] [-v] [-t THREADS] [-m TIMEOUT] [-e] [-c] [-a] [--dbusername DBUSERNAME] [--dbpassword DBPASSWORD] [--dbhost DBHOST] [--dbport DBPORT] [--dbname DBNAME] [file]
 
                _   __                 ______      __                    _    _____
               / | / /___ _   ______ _/ ____/___  / /_  ______ ___  ____| |  / /__ \
@@ -50,19 +50,26 @@ usage: ncv2.py [-h] [-u] [-v] [-t THREADS] [-m TIMEOUT] [-e] [-c] [-a] [file]
        Fair warning, calling the update function will take a while on large databases!
 
 positional arguments:
-  file                  The path to the .json file to be parsed.
+  file                  the path to the .json file to be parsed.
 
 options:
   -h, --help            show this help message and exit
-  -u, --update          Ping/Update the current servers in the database. (does not require a file)
-  -v, --verbose         Enable verbose mode to print detailed logs.
+  -u, --update          ping/Update the current servers in the database. (does not require a file)
+  -v, --verbose         enable verbose mode to print detailed logs.
   -t THREADS, --threads THREADS
-                        The amount of threads to process the file with. (4 default)
+                        the amount of threads to process the file with. (4 default)
   -m TIMEOUT, --timeout TIMEOUT
-                        The timeout speed for the servers, read the README for more info. (0.3 default)
-  -e, --external        Used for when the database is not on the same machine. (only applies for --update)
-  -c, --verify          Verify all playernames in the database. (does not require a file)
-  -a, --altapi          Verify using the official Mojang API instead of Mowojang. (only applies for --verify)
+                        the timeout speed for the servers, read the README for more info. (0.3 default)
+  -e, --external        used for when the database is not on the same machine. (only applies for --update)
+  -c, --verify          verify all playernames in the database. (does not require a file)
+  -a, --altapi          verify using the official Mojang API instead of Mowojang. (only applies for --verify)
+  --dbusername DBUSERNAME
+                        pass database username via argument.
+  --dbpassword DBPASSWORD
+                        pass database password via argument.
+  --dbhost DBHOST       pass database host via argument. (default localhost)
+  --dbport DBPORT       pass database port via argument. (default 3306)
+  --dbname DBNAME       pass database name via argument. (default 'novacolumn')
 
 Example usage:
 Verbose
