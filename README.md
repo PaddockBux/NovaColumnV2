@@ -1,10 +1,6 @@
 # NovaColumnV2
 
-Welcome to NovaColumnV2!
-
-## What's this?
-
-NovaColumnV2 is an educational tool that scans the internet for Minecraft servers and queries them for their status. After pinging, the data is then taken from the server and saved into the database for historical logging.\
+NovaColumnV2 is an educational tool that uses [masscan](https://github.com/robertdavidgraham/masscan) to scan the internet for Minecraft servers.\
 We have created a web UI that our main [website](https://novacolumn.com) provides as a demo, you can find the repo [here](https://github.com/PaddockBux/NovaColumn-WebUI).
 
 ## Disclaimers
@@ -29,22 +25,25 @@ Python libraries are also supplied in the requirements.txt file. To install, run
 
 ## Installation
 
-Clone the repo using `git clone https://github.com/PaddockBux/NovaColumnV2` and then run the script using `python3 ncv2.py`.
+Clone the repo using `git clone https://github.com/PaddockBux/NovaColumnV2` and then run the script in the adjacent directory using `python ncv2.py`.
 
 ## Usage
 
-Running the script once will create the required database connection configuration file if it is missing.
+NCV2 requires a first run in order to create the database configuration file. Just simply run the script and it will drop a file named `novacolumn.conf` in the same directory. Included is the entries for credentials used to interface with the MariaDB server.
 
-Using NCV2 is quite simple, included in the script is a help page:
+After creating and filling out the configuration file, you're ready to use NCV2.\
+To use NCV2, run masscan with a json output (`-oJ <filename>.json`) and then run NCV2 with the output file: `python ncv2.py <filename>.json`.
+
+Information about arguments are shown when the `-h` argument is added.
 
 ```Text
-usage: ncv2.py [-h] [-u] [-v] [-t THREADS] [-m TIMEOUT] [-e] [-c] [file]
+usage: ncv2.py [-h] [-u] [-v] [-t THREADS] [-m TIMEOUT] [-e] [-c] [-a] [file]
 
-               _   __                 ______      __                    _    _____ 
+               _   __                 ______      __                    _    _____
               / | / /___ _   ______ _/ ____/___  / /_  ______ ___  ____| |  / /__ \
              /  |/ / __ \ | / / __ `/ /   / __ \/ / / / / __ `__ \/ __ \ | / /__/ /
-            / /|  / /_/ / |/ / /_/ / /___/ /_/ / / /_/ / / / / / / / / / |/ // __/ 
-           /_/ |_/\____/|___/\__,_/\____/\____/_/\__,_/_/ /_/ /_/_/ /_/|___//____/ 
+            / /|  / /_/ / |/ / /_/ / /___/ /_/ / / /_/ / / / / / / / / / |/ // __/
+           /_/ |_/\____/|___/\__,_/\____/\____/_/\__,_/_/ /_/ /_/_/ /_/|___//____/
                                         NovaColumn V2
           Programmed by & main ideas guy: GoGreek    ::    Co-ideas guy: Draxillian
 
@@ -63,6 +62,7 @@ options:
                         The timeout speed for the servers, read the README for more info. (0.3 default)
   -e, --external        Used for when the database is not on the same machine. (only applies for --update)
   -c, --verify          Verify all playernames in the database. (does not require a file)
+  -a, --altapi          Verify using the official Mojang API instead of Mowojang. (only applies for --verify)
 
 Example usage:
 Verbose
@@ -79,9 +79,13 @@ For more information, check the README file.
 
 ## Contributing
 
-Pull requests must be clear and concise.\
-If you want to add a new feature, please open an issue first to discuss. Issues with no clarification or reason (add x because yes) will be closed.
+Pull requests must be clear about what's added.\
+If you want to add a new feature, please open an issue or send a message in our Discord server channel #suggestions to discuss. Issues with no clarification or reason (add x because yes) will be rejected.
 
 ## License
 
 This project is licensed under the AGPL-3.0 License - see the [LICENSE](./LICENSE) file for details.
+
+## Contact
+
+If you need help with utilizing NCV2 or just want to see plans and updates, join our [Discord server](https://discord.gg/FtSqu7FzHJ).
