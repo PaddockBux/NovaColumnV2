@@ -56,16 +56,27 @@ def initialize_arguments():
     return args
 
 def read_config():
-    config = configparser.ConfigParser()
-    config.read("novacolumn.conf")
-    config_data = {
-        'db_name': config.get('database', 'database_name'),
-        'db_username': config.get('database', 'username'),
-        'db_pass': config.get('database', 'password'),
-        'db_host': config.get('database', 'host'),
-        'db_port': config.getint('database', 'port')
-    }
-    return config_data
+    global args
+    if args.dbusername:
+        config_data = {
+            'db_name': args.dbname,
+            'db_username': args.dbusername,
+            'db_pass': args.dbpassword,
+            'db_host': args.dbhost,
+            'db_port': args.dbport
+        }
+        return config_data
+    else:
+        config = configparser.ConfigParser()
+        config.read("novacolumn.conf")
+        config_data = {
+            'db_name': config.get('database', 'database_name'),
+            'db_username': config.get('database', 'username'),
+            'db_pass': config.get('database', 'password'),
+            'db_host': config.get('database', 'host'),
+            'db_port': config.getint('database', 'port')
+        }
+        return config_data
 
 def connect_to_db(config_data):
     try:
@@ -107,39 +118,39 @@ def ping_server(ip, port, timeout):
         return False, ip, port
     
 # Save to DB basically.
-def db_handler(ping_queue, conn, update):
-    if update == False:
-        while 1:
-            result = ping_queue.get()
-            if result == "STOP":
-                break
-            elif result[0] is False:
-                # ping_queue.task_done() # This might break things
-                continue
-            else:
-                data_out = result[1]
-            cursor = conn.cursor()
-            add_to_db(cursor, data_out)
-            ping_queue.task_done()
-    else:
-        while 1:
-            result = ping_queue.get()
-            if result == "STOP":
-                break
-            elif result[0] is False:
-                cursor = conn.cursor()
-                ip = result[1]
-                port = result[2]
-                update_online(cursor, ip, port)
-            else:
-                cursor = conn.cursor()
-                data_out = result[1]
-                add_to_db(cursor, data_out)
-            ping_queue.task_done()
+# def db_handler(ping_queue, conn, update):
+#     if update == False:
+#         while 1:
+#             result = ping_queue.get()
+#             if result == "STOP":
+#                 break
+#             elif result[0] is False:
+#                 # ping_queue.task_done() # This might break things
+#                 continue
+#             else:
+#                 data_out = result[1]
+#             cursor = conn.cursor()
+#             add_to_db(cursor, data_out)
+#             ping_queue.task_done()
+#     else:
+#         while 1:
+#             result = ping_queue.get()
+#             if result == "STOP":
+#                 break
+#             elif result[0] is False:
+#                 cursor = conn.cursor()
+#                 ip = result[1]
+#                 port = result[2]
+#                 update_online(cursor, ip, port)
+#             else:
+#                 cursor = conn.cursor()
+#                 data_out = result[1]
+#                 add_to_db(cursor, data_out)
+#             ping_queue.task_done()
 
-def ping_worker(ip, port, timeout, ping_queue):
-    result = ping_server(ip, port, timeout)
-    ping_queue.put(result)
+# def ping_worker(ip, port, timeout, ping_queue):
+#     result = ping_server(ip, port, timeout)
+#     ping_queue.put(result)
 
 def update_online(cursor, ip, port):
     cursor.execute("SELECT MAX(uid) FROM main WHERE ip_fk = (SELECT uid FROM ips WHERE address = ?) AND port = ?", (ip, port))
@@ -197,7 +208,7 @@ def add_to_db(cursor, data_out):
             motd_uid = cursor.fetchone()[0]
         else:
             logger.debug(f"Old MOTD! - Already exists in DB with ID {request[0]}")
-            cursor.execute("SELECT uid FROM motds WHERE text=?", (data_out['motd'],))
+            cursor.execute("SELECT uid FROM motds WHERE text = ?", (data_out['motd'],))
             motd_uid = cursor.fetchone()[0]
         if data_out['favicon'] is None:
             data_out['favicon'] = 'NO_ICON'
@@ -341,80 +352,90 @@ def init_db(conn):
         logger.info('Tables created and initialized successfully.')
 
 def main(json_data, args):
-    ping_queue = queue.Queue()
+    job_queue = queue.Queue()
+    for item in json_data:
+        # Format is obviously (ip, port)
+        job_queue.put((item['ip'], item['ports'][0]['port']))
 
-    if not args.dbusername:
-        config_data = read_config()
-        conn = connect_to_db(config_data)
-    else:
-        config_data = {}
-        config_data['db_username'] = args.dbusername
-        config_data['db_pass'] = args.dbpassword
-        config_data['db_host'] = args.dbhost
-        config_data['db_port'] = args.dbport
-        config_data['db_name'] = args.dbname
-        conn = connect_to_db(config_data)
-    init_db(conn)
+def threadworker():
+    global args
+    connect_to_db()
 
-    db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, False))
-    db_thread.start()
+# def main(json_data, args):
+#     ping_queue = queue.Queue()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-        for index in range(len(json_data)):
-            # Format: {scan_data[INDEX]['ip']}:{scan_data[INDEX]['ports'][0]['port']}
-            executor.submit(ping_worker, json_data[index]['ip'], json_data[index]['ports'][0]['port'], args.timeout, ping_queue)
+#     if not args.dbusername:
+#         config_data = read_config()
+#         conn = connect_to_db(config_data)
+#     else:
+#         config_data = {}
+#         config_data['db_username'] = args.dbusername
+#         config_data['db_pass'] = args.dbpassword
+#         config_data['db_host'] = args.dbhost
+#         config_data['db_port'] = args.dbport
+#         config_data['db_name'] = args.dbname
+#         conn = connect_to_db(config_data)
+#     init_db(conn)
 
-    executor.shutdown(wait=True)
-    logger.warning("All ping jobs have been completed, waiting for the database to catch up. (this will take a while)")
+#     db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, False))
+#     db_thread.start()
 
-    ping_queue.put("STOP")
-    db_thread.join()
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+#         for index in range(len(json_data)):
+#             # Format: {scan_data[INDEX]['ip']}:{scan_data[INDEX]['ports'][0]['port']}
+#             executor.submit(ping_worker, json_data[index]['ip'], json_data[index]['ports'][0]['port'], args.timeout, ping_queue)
 
-    conn.commit()
-    conn.close()
-    logger.info("Parse complete!")
+#     executor.shutdown(wait=True)
+#     logger.warning("All ping jobs have been completed, waiting for the database to catch up. (this will take a while)")
 
-def main_update(args):
-    ping_queue = queue.Queue()
+#     ping_queue.put("STOP")
+#     db_thread.join()
 
-    if not args.dbusername:
-        conn = connect_to_db(read_config())
-    else:
-        config_data = {}
-        config_data['db_username'] = args.dbusername
-        config_data['db_pass'] = args.dbpassword
-        config_data['db_host'] = args.dbhost
-        config_data['db_port'] = args.dbport
-        config_data['db_name'] = args.dbname
-        conn = connect_to_db(config_data)
-    init_db(conn)
+#     conn.commit()
+#     conn.close()
+#     logger.info("Parse complete!")
 
-    if not args.external:
-        db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
-        db_thread.start()
+# def main_update(args):
+#     ping_queue = queue.Queue()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT i.address, m.port FROM main m JOIN ips i ON m.ip_fk = i.uid GROUP BY i.address, m.port')
-            sreq = cursor.fetchall()
-            for index in range(len(sreq)):
-                ip = sreq[index][0]
-                port = sreq[index][1]
-                executor.submit(ping_worker, ip, port, args.timeout, ping_queue)
+#     if not args.dbusername:
+#         conn = connect_to_db(read_config())
+#     else:
+#         config_data = {}
+#         config_data['db_username'] = args.dbusername
+#         config_data['db_pass'] = args.dbpassword
+#         config_data['db_host'] = args.dbhost
+#         config_data['db_port'] = args.dbport
+#         config_data['db_name'] = args.dbname
+#         conn = connect_to_db(config_data)
+#     init_db(conn)
 
-    if args.external:
-        db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
-        db_thread.start()
+#     if not args.external:
+#         db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
+#         db_thread.start()
 
-    executor.shutdown(wait=True)
-    logger.warning("All ping jobs have been completed, waiting for the database to catch up. (this will take a while)")
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+#         with conn.cursor() as cursor:
+#             cursor.execute('SELECT i.address, m.port FROM main m JOIN ips i ON m.ip_fk = i.uid GROUP BY i.address, m.port')
+#             sreq = cursor.fetchall()
+#             for index in range(len(sreq)):
+#                 ip = sreq[index][0]
+#                 port = sreq[index][1]
+#                 executor.submit(ping_worker, ip, port, args.timeout, ping_queue)
 
-    ping_queue.put("STOP")
-    db_thread.join()
+#     if args.external:
+#         db_thread = threading.Thread(target=db_handler, args=(ping_queue, conn, True))
+#         db_thread.start()
 
-    conn.commit()
-    conn.close()
-    logger.info("Update complete!")
+#     executor.shutdown(wait=True)
+#     logger.warning("All ping jobs have been completed, waiting for the database to catch up. (this will take a while)")
+
+#     ping_queue.put("STOP")
+#     db_thread.join()
+
+#     conn.commit()
+#     conn.close()
+#     logger.info("Update complete!")
 
 def create_config():
     config = configparser.ConfigParser()
@@ -432,16 +453,7 @@ def create_config():
         config.write(file)
 
 def verify_usernames(args):
-    if not args.dbusername:
-        conn = connect_to_db(read_config())
-    else:
-        config_data = {}
-        config_data['db_username'] = args.dbusername
-        config_data['db_pass'] = args.dbpassword
-        config_data['db_host'] = args.dbhost
-        config_data['db_port'] = args.dbport
-        config_data['db_name'] = args.dbname
-        conn = connect_to_db(config_data)
+    conn = connect_to_db(read_config())
     init_db(conn)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM playernames WHERE valid = 'waiting'")
@@ -514,9 +526,10 @@ if __name__ == "__main__":
     else:
         logger.debug(".conf file found.")
 
+    # +++ Args check starts here +++
     if args.update:
         logger.info('Updating entire database!')
-        main_update(args)
+        # main_update(args)    
     elif args.verify:
         logger.info('Validating usernames:')
         verify_usernames(args)
@@ -524,6 +537,7 @@ if __name__ == "__main__":
         if not args.file:
             logger.critical('There was no .json file provided!')
             exit(1)
+        # --- Args check stops here ---
         try:
             with open(args.file, 'r', encoding='utf-8') as file:
                 scan_data = json.load(file)
@@ -535,4 +549,5 @@ if __name__ == "__main__":
         except FileNotFoundError:
             logger.critical('The .json file provided does not exist.')
             exit(1)
-        main(scan_data, args)
+        # Logic is simple, look for file, if: not correct or not found: exit, otherwise they all pass and code below is executed
+        # main(scan_data, args)
