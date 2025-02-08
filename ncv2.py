@@ -133,64 +133,28 @@ def add_to_db(cursor, data_out):
     port = data_out['port']
     try:
         # Check if IP exists
-        cursor.execute("SELECT uid FROM ips WHERE address = ?", (ip,))
-        request = cursor.fetchone()
-        if request is None:
-            logger.debug("New IP!")
-            cursor.execute("INSERT INTO ips (address) VALUES (?)", (ip,))
-            ip_uid = cursor.lastrowid
-        else:
-            logger.debug(f"Old IP! - Already exists in DB with ID {request[0]}")
-            ip_uid = request[0]
+        cursor.execute("INSERT INTO ips (address) VALUES (?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (ip,))
+        ip_uid = cursor.lastrowid
         
         # Check if version exists
-        cursor.execute("SELECT uid FROM versions WHERE text = ?", (data_out['version'],))
-        request = cursor.fetchone()
-        if request is None:
-            logger.debug("New version!")
-            cursor.execute("INSERT INTO versions (text) VALUES (?)", (data_out['version'],))
-            ver_uid = cursor.lastrowid
-        else:
-            logger.debug(f"Old version! - Already exists in DB with ID {request[0]}")
-            ver_uid = request[0]
+        cursor.execute("INSERT INTO versions (text) VALUES (?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (data_out['version'],))
+        ver_uid = cursor.lastrowid
         
         # Check if MOTD exists
-        cursor.execute("SELECT uid FROM motds WHERE text = ?", (data_out['motd'],))
-        request = cursor.fetchone()
-        if request is None:
-            logger.debug("New MOTD!")
-            cursor.execute("INSERT INTO motds (text) VALUES (?)", (data_out['motd'],))
-            motd_uid = cursor.lastrowid
-        else:
-            logger.debug(f"Old MOTD! - Already exists in DB with ID {request[0]}")
-            motd_uid = request[0]
-
-        if data_out['favicon'] is None:
-            data_out['favicon'] = 'NO_ICON'
+        cursor.execute("INSERT INTO motds (text) VALUES (?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (data_out['motd'],))
+        motd_uid = cursor.lastrowid
         
         # Check if favicon exists
-        cursor.execute("SELECT uid FROM icons WHERE data = ?", (data_out['favicon'],))
-        request = cursor.fetchone()
-        if request is None:
-            logger.debug("New icon!")
-            cursor.execute("INSERT INTO icons (data) VALUES (?)", (data_out['favicon'],))
-            icon_uid = cursor.lastrowid
-        else:
-            logger.debug(f"Old icon! - Already exists in DB with ID {request[0]}")
-            icon_uid = request[0]
+        if data_out['favicon'] is None:
+            data_out['favicon'] = 'NO_ICON'
+        cursor.execute("INSERT INTO icons (data) VALUES (?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (data_out['favicon'],))
+        icon_uid = cursor.lastrowid
         
         # Check for playernames and add to array
         playernames = []
         for username, uuid in zip(data_out['usernames'], data_out['uuids']):
-            cursor.execute("SELECT uid FROM playernames WHERE username = ?", (username,))
-            exist_username = cursor.fetchone()
-            if exist_username:
-                uid = exist_username[0]
-            else:
-                cursor.execute("INSERT INTO playernames (username, userid) VALUES (?, ?)", (username, uuid))
-                uid = cursor.lastrowid
-            
-            playernames.append(uid)
+            cursor.execute("INSERT INTO playernames (username, userid) VALUES (?, ?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (username, uuid))            
+            playernames.append(cursor.lastrowid)
 
         logger.debug('Saving to main...')
         cursor.execute('''INSERT INTO main (
@@ -250,19 +214,19 @@ def init_db(conn):
     except mariadb.Error:
         logger.info('Tables do not exist. Creating tables...')
 
-        cursor.execute("CREATE TABLE ips (uid SERIAL PRIMARY KEY, address INET4)")
+        cursor.execute("CREATE TABLE ips (uid SERIAL PRIMARY KEY, address INET4, UNIQUE INDEX uadd (address))")
         logger.debug('Created table "ips"')
         
-        cursor.execute("CREATE TABLE versions (uid SERIAL PRIMARY KEY, text TINYTEXT) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        cursor.execute("CREATE TABLE versions (uid SERIAL PRIMARY KEY, text TINYTEXT, UNIQUE INDEX utx (text)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
         logger.debug('Created table "versions"')
         
-        cursor.execute("CREATE TABLE playernames (uid SERIAL PRIMARY KEY, username CHAR(128), userid CHAR(36), valid ENUM('true','false','waiting') DEFAULT 'waiting') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        cursor.execute("CREATE TABLE playernames (uid SERIAL PRIMARY KEY, username CHAR(128), userid CHAR(36), valid ENUM('true','false','waiting') DEFAULT 'waiting', UNIQUE INDEX uuid (userid)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
         logger.debug('Created table "playernames"')
         
-        cursor.execute("CREATE TABLE motds (uid SERIAL PRIMARY KEY, text VARCHAR(512)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        cursor.execute("CREATE TABLE motds (uid SERIAL PRIMARY KEY, text VARCHAR(512), UNIQUE INDEX utx (text)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
         logger.debug('Created table "motds"')
         
-        cursor.execute("CREATE TABLE icons (uid SERIAL PRIMARY KEY, data TEXT)")
+        cursor.execute("CREATE TABLE icons (uid SERIAL PRIMARY KEY, data TEXT NOT NULL, UNIQUE INDEX udt (data))")
         logger.debug('Created table "icons"')
         
         cursor.execute('''CREATE TABLE main (
@@ -297,8 +261,8 @@ def init_db(conn):
         )''')
         logger.debug('Created table "online"')
         
-        cursor.execute('CREATE TABLE blacklist (address INET4, port MEDIUMINT)')
-        logger.debug('Created table "blacklist"')
+        # cursor.execute('CREATE TABLE blacklist (address INET4, port MEDIUMINT)')
+        # logger.debug('Created table "blacklist"')
         
         conn.commit()
         logger.info('Tables created and initialized successfully.')
@@ -333,6 +297,7 @@ def main(json_data=[]):
 def threadworker():
     global args, job_queue
     conn = connect_to_db(read_config())
+    conn.autocommit = True
     cursor = conn.cursor()
     while not job_queue.empty():
         ip, port = job_queue.get_nowait()
@@ -342,7 +307,6 @@ def threadworker():
         elif args.update:
             update_online(cursor, ip, port)
     cursor.close()
-    conn.commit()
     conn.close()
 
 def create_config():
