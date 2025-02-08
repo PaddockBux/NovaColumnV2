@@ -1,5 +1,6 @@
 from mcstatus import JavaServer
 from datetime import datetime
+import concurrent.futures
 import configparser
 import threading
 import requests
@@ -23,29 +24,31 @@ def initialize_arguments():
                                         NovaColumn V2
           Programmed by & main ideas guy: GoGreek    ::    Co-ideas guy: Draxillian
             
+       Fair warning, calling the update function will take a while on large databases!
 ''',
     epilog="Example usage:\n"
            "Verbose\n"
-           "    ncv2 -v input.json\n"
+           "    nc2 -v input.json\n"
            "Update the database\n"
-           "    ncv2 -u\n"
+           "    nc2 -u\n"
            "Use multiple threads\n"
-           "    ncv2 -t 10 input.json\n"
+           "    nc2 -t 10 input.json\n"
            "Change timeout & threads\n"
-           "    ncv2 -m 2.3 -t 10 input.json\n\n"
+           "    nc2 -m 2.3 -t 10 input.json\n\n"
            "For more information, check the README file.",
     formatter_class=argparse.RawDescriptionHelpFormatter
 )
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('file', nargs='?', type=str, help="the path to the .json file to be parsed.")
-    group.add_argument('-u', '--update', action='store_true', help="ping/update the current servers in the database. (does not require a file)")
+    group.add_argument('-u', '--update', action='store_true', help="ping/Update the current servers in the database. (does not require a file)")
     parser.add_argument('-v', '--verbose', action='store_true', help="enable verbose mode to print detailed logs.")
     parser.add_argument('-t', '--threads', type=int, default="4", help="the amount of threads to process the file with. (4 default)")
-    parser.add_argument('-m', '--timeout', type=float, default="0.3", help="the timeout speed for the servers. (0.3 default)")
+    parser.add_argument('-m', '--timeout', type=float, default="0.3", help="the timeout speed for the servers, read the README for more info. (0.3 default)")
+    parser.add_argument('-e', '--external', action='store_true', help="used for when the database is not on the same machine. (only applies for --update)")
     parser.add_argument('-c', '--verify', action='store_true', help="verify all playernames in the database. (does not require a file)")
-    parser.add_argument('-a', '--altapi', action='store_true', default=True, help="verify using the official Mojang API instead of Mowojang. (only applies for -c/--verify)")
+    parser.add_argument('-a', '--altapi', action='store_true', default=True, help="verify using the official Mojang API instead of Mowojang. (only applies for --verify)")
     parser.add_argument('--dbusername', type=str, help="pass database username via argument.")
-    parser.add_argument('--dbpassword', type=str, default="", help="pass database password via argument.")
+    parser.add_argument('--dbpassword', type=str, help="pass database password via argument.")
     parser.add_argument('--dbhost', type=str, default="localhost", help="pass database host via argument. (default localhost)")
     parser.add_argument('--dbport', type=int, default=3306, help="pass database port via argument. (default 3306)")
     parser.add_argument('--dbname', type=str, default="novacolumn", help="pass database name via argument. (default 'novacolumn')")
@@ -174,10 +177,11 @@ def add_to_db(cursor, data_out):
                 data_out['ping']
             )
         )
-        main_uid = cursor.lastrowid
+        cursor.execute("SELECT last_insert_id()")
+        main_uid = cursor.fetchone()[0]
         logger.debug('Getting last UID from main...')
         
-        logger.debug('Saving it to online...')
+        logger.debug('Saving to online...')
         cursor.execute('''INSERT INTO online (
                 main_fk, online, time
             ) 
@@ -201,7 +205,6 @@ def add_to_db(cursor, data_out):
         Version [{data_out['version']}]
         MOTD snippet: [{data_out['motd'][:16]}]
         Icon snippet: [{data_out['favicon'][64:10:]}]
-        Playercount/Playermax: [{data_out['players']}/{data_out['maxplayers']}]
         Usernames: {data_out['usernames']}  
         UUIDs: {data_out['uuids']}
         ''')
@@ -232,10 +235,10 @@ def init_db(conn):
         cursor.execute('''CREATE TABLE main (
             uid SERIAL PRIMARY KEY,
             ip_fk BIGINT UNSIGNED NOT NULL,
-            port SMALLINT UNSIGNED,
+            port MEDIUMINT,
             time DOUBLE,
-            playercount MEDIUMINT UNSIGNED,
-            playermax MEDIUMINT UNSIGNED,
+            playercount MEDIUMINT,
+            playermax MEDIUMINT,
             motd_fk BIGINT UNSIGNED NOT NULL,
             ver_fk BIGINT UNSIGNED NOT NULL,
             users_fk JSON,
@@ -267,32 +270,11 @@ def init_db(conn):
         conn.commit()
         logger.info('Tables created and initialized successfully.')
 
-def main(json_data=[]):
-    global args, job_queue
+def main(json_data, args):
     job_queue = queue.Queue()
-    # Check DB:
-    conn = connect_to_db(read_config())
-    init_db(conn)
-    if args.update:
-        cursor = conn.cursor()
-        cursor.execute('SELECT i.address, m.port FROM main m JOIN ips i ON m.ip_fk = i.uid GROUP BY i.address, m.port')
-        sreq = cursor.fetchall()
-        for item in sreq:
-            job_queue.put((item[0], item[1]))
-    else:
-        for item in json_data:
-            # Format is obviously (ip, port)
-            job_queue.put((item['ip'], item['ports'][0]['port']))
-    conn.commit()
-    conn.close()
-    threads = []
-    for _ in range(args.threads):
-        thread = threading.Thread(target=threadworker)
-        thread.start()
-        threads.append(thread)
-    for thread in threads:
-        thread.join()
-    logger.info("Complete!")
+    for item in json_data:
+        # Format is obviously (ip, port)
+        job_queue.put((item['ip'], item['ports'][0]['port']))
 
 def threadworker():
     global args, job_queue
@@ -324,8 +306,7 @@ def create_config():
         file.write("; If you plan to use this in a public database, make sure not to use root as the default user.\n")
         config.write(file)
 
-def verify_usernames():
-    global args
+def verify_usernames(args):
     conn = connect_to_db(read_config())
     init_db(conn)
     cursor = conn.cursor()
@@ -366,7 +347,7 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
 
-    file_formatter = logging.Formatter('%(asctime)s - %(threadName)s - %(levelname)s - %(message)s')
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
     log_dir = os.path.join(os.getcwd(), 'logs')
     if not os.path.exists(log_dir):
@@ -382,7 +363,7 @@ if __name__ == "__main__":
         console_handler.setLevel(logging.DEBUG) 
     else:
         console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter('%(threadName)s - %(levelname)s - %(message)s')
+    console_formatter = logging.Formatter('%(levelname)s - %(message)s')
     console_handler.setFormatter(console_formatter)
 
     logger.addHandler(file_handler)
@@ -399,13 +380,18 @@ if __name__ == "__main__":
     else:
         logger.debug(".conf file found.")
 
-    if args.verify:
+    # +++ Args check starts here +++
+    if args.update:
+        logger.info('Updating entire database!')
+        # main_update(args)    
+    elif args.verify:
         logger.info('Validating usernames:')
-        verify_usernames()
-    elif not args.update:
+        verify_usernames(args)
+    else:
         if not args.file:
             logger.critical('There was no .json file provided!')
             exit(1)
+        # --- Args check stops here ---
         try:
             with open(args.file, 'r', encoding='utf-8') as file:
                 scan_data = json.load(file)
@@ -417,6 +403,5 @@ if __name__ == "__main__":
         except FileNotFoundError:
             logger.critical('The .json file provided does not exist.')
             exit(1)
-        main(scan_data)
-    else:
-        main()
+        # Logic is simple, look for file, if: not correct or not found: exit, otherwise they all pass and code below is executed
+        # main(scan_data, args)
