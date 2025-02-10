@@ -1,6 +1,5 @@
 # Plans/Tasklist for NovaColumnV2
 
-- [X] Add [Mowojang API](https://mowojang.matdoes.dev/) support
-- [X] Remove SQL redundancy
-- [ ] Log dead servers during parsing
-- [X] Update API and remove SQL redundancy ([NovaColumn WebUI](https://github.com/PaddockBux/NovaColumn-WebUI))
+- [ ] Log dead servers during parsing (?)
+- [ ] Use status.raw from mcstatus
+- [ ] Using raw, check for FML and save to DB when available (only for mc versions below modern IIRC)
