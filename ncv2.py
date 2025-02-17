@@ -105,6 +105,7 @@ def ping_server(ip, port, timeout):
             'uuids': [player.id for player in (serverstatus.players.sample or [])],
             'maxplayers': serverstatus.players.max,
             'motd': serverstatus.motd.to_minecraft(),
+            'umotd': serverstatus.motd.to_plain(),
             'signedmsg': serverstatus.enforces_secure_chat,
             'favicon': serverstatus.icon
         }
@@ -142,7 +143,7 @@ def add_to_db(cursor, data_out):
         ver_uid = cursor.lastrowid
         
         # Check if MOTD exists
-        cursor.execute("INSERT INTO motds (text) VALUES (?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (data_out['motd'],))
+        cursor.execute("INSERT INTO motds (text, utext) VALUES (?, ?) ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)", (data_out['motd'], data_out['umotd']))
         motd_uid = cursor.lastrowid
         
         # Check if favicon exists
@@ -225,11 +226,12 @@ def init_db(conn):
         cursor.execute("CREATE TABLE playernames (uid SERIAL PRIMARY KEY, username CHAR(128), userid CHAR(36), valid ENUM('true','false','waiting') DEFAULT 'waiting', UNIQUE INDEX uuid (userid)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
         logger.debug('Created table "playernames"')
         
-        cursor.execute("CREATE TABLE motds (uid SERIAL PRIMARY KEY, text VARCHAR(512), UNIQUE INDEX utx (text)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        cursor.execute("CREATE TABLE motds (uid SERIAL PRIMARY KEY, text VARCHAR(512), utext VARCHAR(512), UNIQUE INDEX utx (text)) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
         logger.debug('Created table "motds"')
         
-        cursor.execute("CREATE TABLE icons (uid SERIAL PRIMARY KEY, data TEXT NOT NULL, UNIQUE INDEX udt (data))")
-        logger.debug('Created table "icons"')
+        cursor.execute("CREATE TABLE icons (uid SERIAL PRIMARY KEY, data TEXT NOT NULL, UNIQUE INDEX udt (data)) ROW_FORMAT=COMPRESSED")
+        cursor.execute('INSERT INTO icons (data) VALUES ("NO_ICON")')
+        logger.debug('Created table "icons" and inserted "NO_ICON"')
         
         cursor.execute('''CREATE TABLE main (
             uid SERIAL PRIMARY KEY,
