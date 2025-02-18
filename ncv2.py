@@ -160,9 +160,9 @@ def add_to_db(cursor, data_out):
 
         logger.debug('Saving to main...')
         cursor.execute('''INSERT INTO main (
-                ip_fk, port, time, playercount, playermax, motd_fk, ver_fk, protocol, users_fk, signed, icon_fk, ping
+                ip_fk, port, time, playercount, playermax, motd_fk, ver_fk, protocol, signed, icon_fk, ping
             ) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                 ip_uid, 
                 port, 
                 time.time(), 
@@ -171,7 +171,6 @@ def add_to_db(cursor, data_out):
                 motd_uid,
                 ver_uid, 
                 data_out['protocol'],
-                str(playernames), 
                 data_out['signedmsg'], 
                 icon_uid, 
                 data_out['ping']
@@ -246,7 +245,6 @@ def init_db(conn):
             motd_fk BIGINT UNSIGNED NOT NULL,
             ver_fk BIGINT UNSIGNED NOT NULL,
             protocol INT,
-            users_fk JSON,
             signed BOOLEAN,
             icon_fk BIGINT UNSIGNED NOT NULL,
             ping FLOAT,
