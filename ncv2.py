@@ -179,6 +179,9 @@ def add_to_db(cursor, data_out):
         )
         main_uid = cursor.lastrowid
         logger.debug('Getting last UID from main...')
+
+        for player_id in playernames:
+            cursor.execute("INSERT INTO rel_player_server (main_fk, player_fk) VALUES (?, ?)", (main_uid, player_id))
         
         logger.debug('Saving it to online...')
         cursor.execute('''INSERT INTO online (
@@ -254,9 +257,14 @@ def init_db(conn):
         )''')
         logger.debug('Created table "main"')
 
-        cursor.execute('CREATE INDEX idx_ip_port ON main (ip_fk, port)')
-        cursor.execute('CREATE INDEX idx_uid ON main (uid)')
-        logger.debug('Created main table composite index for ip_fk, port, and uid.')
+        cursor.execute('''CREATE TABLE rel_player_server (
+            main_fk BIGINT(20) UNSIGNED NOT NULL,
+            player_fk BIGINT(20) UNSIGNED NOT NULL,
+            PRIMARY KEY (main_fk, player_fk),
+            CONSTRAINT fk_main_player_main FOREIGN KEY (main_fk) REFERENCES main (uid) ON DELETE CASCADE,
+            CONSTRAINT fk_main_player_playernames FOREIGN KEY (player_fk) REFERENCES playernames (uid) ON DELETE CASCADE
+        )''')
+        logger.debug('Created player-server relations table.')
 
         cursor.execute('''CREATE TABLE online (
             main_fk BIGINT UNSIGNED NOT NULL, 
